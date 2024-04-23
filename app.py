@@ -1,233 +1,243 @@
-import os
-import sys
-import pandas as pd
-import numpy as np 
-import requests
-
-from io import BytesIO
-from glob import glob
-from PIL import Image, ImageEnhance
-
 import streamlit as st
+from PIL import Image, ImageDraw, ImageFont
+import io
+import requests
+import time
+import random
+import os
 
-sys.path.insert(0, ".")
-from sophisticated_palette.utils import show_palette, model_dict, get_palette, \
-    sort_func_dict, store_palette, display_matplotlib_code, display_plotly_code,\
-     get_df_rgb, enhancement_range, plot_rgb_3d, plot_hsv_3d, print_praise
+gl_background_size = (1024, 1024)
 
+gl_image = Image.new("RGB", gl_background_size, "black")
 
-gallery_files = glob(os.path.join(".", "images", "*"))
-gallery_dict = {image_path.split("/")[-1].split(".")[-2].replace("-", " "): image_path
-    for image_path in gallery_files}
+class BackgroundGenerator:
+    def __init__(self):
+        self.api_url = "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-xl-base-1.0"
+        self.headers = {"Authorization": "Bearer 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"}
+        self.genre_options = ["Event", "Educational", "Health"]
 
-st.image("logo.jpg")
-st.sidebar.title("Sophisticated Palette 🎨")
-st.sidebar.caption("Tell your data story with style.")
-st.sidebar.markdown("Made by [Siavash Yasini](https://www.linkedin.com/in/siavash-yasini/)")
-st.sidebar.caption("Look behind the scenes of Sophisticated Palette [here](https://blog.streamlit.io/create-a-color-palette-from-any-image/).")
+    def query(self, payload):
+        response = requests.post(self.api_url, headers=self.headers, json=payload)
+        return response.content
 
+    def generate_background(self, genre, prompt):
+        seed = random.randint(0,10000)
+        payload = {"inputs": f"{prompt} for the background of poster of {genre} genre , ((no text))", "seed": seed,"negative_prompt":"(text)"}
+        return self.query(payload)
 
-with st.sidebar.expander("See My Other Streamlit Apps"):
-    st.caption("Snowflake Cheat Sheet: [App](https://snow-flake-cheat-sheet.streamlit.app/) 🎈,  [Blog Post](https://medium.com/snowflake/the-ungifted-amateurs-guide-to-snowflake-449284e4bd72) 📝")
-    st.caption("Wordler: [App](https://wordler.streamlit.app/) 🎈,  [Blog Post](https://blog.streamlit.io/the-ultimate-wordle-cheat-sheet/) 📝")
-    st.caption("Koffee of the World: [App](https://koffee.streamlit.app/) 🎈")
+    def regenerate_background(self, genre, feedback, prompt):
+        seed = random.randint(0,10000)
+        payload = {"inputs": f"{prompt} and {feedback} for the background of poster of {genre} genre ,((no text))", "seed": seed,"negative_prompt":"(text)"}
+        return self.query(payload)
 
-st.sidebar.markdown("---")
+    def run(self):
+        st.title("Automated Poster Generation and Customization")
 
-toggle = st.sidebar.checkbox("Toggle Update", value=True, help="Continuously update the pallete with every change in the app.")
-click = st.sidebar.button("Find Palette", disabled=bool(toggle))
+        selected_genre = st.selectbox("Select a genre:", self.genre_options)
+        subgenres = {
+            'Event': ["Concert", "Festival", "Movie", "Sports","User Specific"],
+            'Educational': ["Science Fair", "Academic Conference", "Educational Workshop"],
+            'Health': ["Health Awareness", "Medical Conference", "Vaccination Campaign"]
+        }
+        selected_subgenre = st.selectbox(f"Select a subgenre of {selected_genre}:", subgenres[selected_genre])
 
-st.sidebar.markdown("---")
-st.sidebar.header("Settings")
-palette_size = int(st.sidebar.number_input("palette size", min_value=1, max_value=20, value=5, step=1, help="Number of colors to infer from the image."))
-sample_size = int(st.sidebar.number_input("sample size", min_value=5, max_value=3000, value=500, step=500, help="Number of sample pixels to pick from the image."))
-
-# Image Enhancement
-enhancement_categories = enhancement_range.keys()
-enh_expander = st.sidebar.expander("Image Enhancements", expanded=False)
-with enh_expander:
-    
-    if st.button("reset"):
-        for cat in enhancement_categories:
-            if f"{cat}_enhancement" in st.session_state:
-                st.session_state[f"{cat}_enhancement"] = 1.0
-enhancement_factor_dict = {
-    cat: enh_expander.slider(f"{cat} Enhancement", 
-                            value=1., 
-                            min_value=enhancement_range[cat][0], 
-                            max_value=enhancement_range[cat][1], 
-                            step=enhancement_range[cat][2],
-                            key=f"{cat}_enhancement")
-    for cat in enhancement_categories
+        prompts_dict = {
+    "User Specific":"Design a bright, simple, single or two colours backgorund for a poster with (--no text:0.5)",
+    "Concert": "Design a vibrant concert poster backgorund capturing the essence of the indie music scene. Incorporate a dynamic blend of colors and imagery that resonates with the indie vibe. Include silhouettes or stylized representations of people immersed in the concert experience, conveying the energy and excitement of live music with (--no text:0.5)",
+    "Festival": "Generate a vibrant festival poster. Blend a kaleidoscope of colors seamlessly, incorporating elements like confetti, candles and other festive props. Capture the lively spirit of the event with dynamic compositions and energetic visuals with (--no text:0.5)",
+    "Sports": "Design a dynamic sports poster featuring a striking silhouette of a determined runner against a vibrant background, capturing the essence of speed and endurance. Incorporate bold typography to highlight the event details and use energetic colors to evoke a sense of excitement (--no text:0.5).",
+    "Movie": "Generate an image for a movie poster with a suspicious theme. Use a darker color scheme to create an atmosphere of intrigue and uncertainty. Depict abstract elements that hint at secrecy, such as obscured silhouettes, hidden symbols, or veiled objects. Utilize shades of mysterious grays, and subtle hints of intense color to convey a sense of suspense. Ensure the overall composition sparks curiosity and invites viewers to delve into the enigma behind the movie with (--no text:0.5).",
+    "Science Fair": "Generate an eye-catching science fair poster featuring a captivating depiction of nucleus, microscopes, and a beaker with vividly colored chemicals. Explore the hidden world of atoms and molecules, showcasing the beauty and complexity of the microcosm through striking visuals with (--no text:0.5).",
+    "Educational Workshop": "Generate an image depicting a dynamic educational workshop scenario, featuring a business professional engaged in interactive learning with state-of-the-art technology. Emphasize collaboration, innovation, and the integration of cutting-edge tools within the educational environment with (--no text:0.5).",
+    "Health Awareness": "Generate a health awareness background featuring a prominent illustration.Include relevant props such as pills, a balanced diet, and exercise imagery. Emphasize vibrant colors and use persuasive text to convey the importance of a healthy lifestyle for overall well-being with (--no text:0.5).",
+    "Medical Conference": "Create a captivating medical conference background featuring a prominent display of a DNA helix or a vibrant cell pattern seamlessly integrated across the poster. Emphasize a professional and visually appealing composition to enhance the overall visual impact and convey the theme of cutting-edge advancements in medical research and innovation with (--no text:0.5).",
+    "Vaccination Campaign": "Capture the joy of a healthy childhood! Design a vibrant vaccination awareness poster featuring playful silhouettes of children laughing and playing, harmoniously juxtaposed with the caring image of a doctor holding a vaccination injection. Encourage community health through the power of preventive care with (--no text:0.5).",
+    "Academic Conference" : "Explore the fusion of cutting-edge technology and academic poster presentation by designing a visually engaging poster that incorporates an LCD screen. Showcase the latest advancements in your field using dynamic symbols and interactive elements on the screen, creating an immersive experience for conference attendees. Highlight how this innovative format enhances the dissemination of research findings and facilitates a deeper understanding of complex concepts with (--no text:0.5)."
 }
-enh_expander.info("**Try the following**\n\nColor Enhancements = 2.6\n\nContrast Enhancements = 1.1\n\nBrightness Enhancements = 1.1")
 
-# Clustering Model 
-model_name = st.sidebar.selectbox("machine learning model", model_dict.keys(), help="Machine Learning model to use for clustering pixels and colors together.")
-sklearn_info = st.sidebar.empty()
-
-sort_options = sorted(list(sort_func_dict.keys()) + [key + "_r" for key in sort_func_dict.keys() if key!="random"])
-sort_func = st.sidebar.selectbox("palette sort function", options=sort_options, index=5)
-
-# Random Number Seed
-seed = int(st.sidebar.number_input("random seed", value=42, help="Seed used for all random samplings."))
-np.random.seed(seed)
-st.sidebar.markdown("---")
-
-
-# =======
-#   App
-# =======
-
-# provide options to either select an image form the gallery, upload one, or fetch from URL
-gallery_tab, upload_tab, url_tab = st.tabs(["Gallery", "Upload", "Image URL"])
-with gallery_tab:
-    options = list(gallery_dict.keys())
-    file_name = st.selectbox("Select Art", 
-                            options=options, index=options.index("Mona Lisa (Leonardo da Vinci)"))
-    file = gallery_dict[file_name]
-
-    if st.session_state.get("file_uploader") is not None:
-        st.warning("To use the Gallery, remove the uploaded image first.")
-    if st.session_state.get("image_url") not in ["", None]:
-        st.warning("To use the Gallery, remove the image URL first.")
-
-    img = Image.open(file)
-
-with upload_tab:
-    file = st.file_uploader("Upload Art", key="file_uploader")
-    if file is not None:
-        try:
-            img = Image.open(file)
-        except:
-            st.error("The file you uploaded does not seem to be a valid image. Try uploading a png or jpg file.")
-    if st.session_state.get("image_url") not in ["", None]:
-        st.warning("To use the file uploader, remove the image URL first.")
-
-with url_tab:
-    url_text = st.empty()
-    
-    # FIXME: the button is a bit buggy, but it's worth fixing this later
-
-    # url_reset = st.button("Clear URL", key="url_reset")
-    # if url_reset and "image_url" in st.session_state:
-    #     st.session_state["image_url"] = ""
-    #     st.write(st.session_state["image_url"])
-
-    url = url_text.text_input("Image URL", key="image_url")
-    
-    if url!="":
-        try:
-            response = requests.get(url)
-            img = Image.open(BytesIO(response.content))
-        except:
-            st.error("The URL does not seem to be valid.")
-
-# convert RGBA to RGB if necessary
-n_dims = np.array(img).shape[-1]
-if n_dims == 4:
-    background = Image.new("RGB", img.size, (255, 255, 255))
-    background.paste(img, mask=img.split()[3]) # 3 is the alpha channel
-    img = background
-
-# apply image enhancements
-for cat in enhancement_categories:
-    img = getattr(ImageEnhance, cat)(img)
-    img = img.enhance(enhancement_factor_dict[cat])
-
-# show the image
-with st.expander("🖼  Artwork", expanded=True):
-    st.image(img, use_column_width=True)
+        original_prompt = prompts_dict[selected_subgenre]
+        prompt = original_prompt
+        # background_size = (1024, 1024)
+        # image = Image.new("RGB", background_size, "black")
+        if st.button("Generate Poster Background"):
+            st.text("Generating Poster Background...")
+            image_bytes = self.generate_background(selected_genre, prompt)
+            try:
+                image = Image.open(io.BytesIO(image_bytes))
+                file_path = 'saved_image.jpg'
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    print(f"The file {file_path} has been deleted successfully.")
+                else:
+                    print(f"The file {file_path} does not exist.")
+                image.save('saved_image.jpg')
+            except:
+                image_bytes = self.generate_background(selected_genre, prompt)
+                image = Image.open(io.BytesIO(image_bytes))
+                file_path = 'saved_image.jpg'
+                if os.path.exists(file_path):
+                    os.remove(file_path)
+                    print(f"The file {file_path} has been deleted successfully.")
+                else:
+                    print(f"The file {file_path} does not exist.")
+                image.save('saved_image.jpg')
 
 
-if click or toggle:
-    
-    df_rgb = get_df_rgb(img, sample_size)
+        if st.button("Regenerate Poster Background"):
+            feedback = st.text_input("Please write feedback for the background:")
+            st.text("Regenerating Poster Background...")
+            time.sleep(10)
+            image_bytes = self.regenerate_background(selected_genre, feedback, prompt)
+            image = Image.open(io.BytesIO(image_bytes))
+            file_path = 'saved_image.jpg'
+            # Check if the file exists and then delete it
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                print(f"The file {file_path} has been deleted successfully.")
+            else:
+                print(f"The file {file_path} does not exist.")
+            
+            image.save('saved_image.jpg')
 
-    # (optional for later)
-    # plot_rgb_3d(df_rgb) 
-    # plot_hsv_3d(df_rgb) 
 
-    # calculate the RGB palette and cache it to session_state
-    st.session_state["palette_rgb"] = get_palette(df_rgb, model_name, palette_size, sort_func=sort_func)
 
-    if "palette_rgb" in st.session_state:
-        
-        # store individual colors in session state
-        store_palette(st.session_state["palette_rgb"])
+def resize_with_aspect_ratio(image, width=None, height=None):
+    original_width, original_height = image.size
 
-        st.write("---")
+    if width is None and height is None:
+        return image
 
-        # sort the colors based on the selected option
-        colors = {k: v for k, v in st.session_state.items() if k.startswith("col_")}
-        sorted_colors = {k: colors[k] for k in sorted(colors, key=lambda k: int(k.split("_")[-1]))}
-        
-        # find the hex representation for matplotlib and plotly settings
-        palette_hex = [color for color in sorted_colors.values()][:palette_size]
-        with st.expander("Adopt this Palette", expanded=False):
-            st.pyplot(show_palette(palette_hex))
+    if width is not None and height is not None:
+        raise ValueError("You must specify either width or height, not both.")
 
-            matplotlib_tab, plotly_tab = st.tabs(["matplotlib", "plotly"])
+    if width is not None:
+        aspect_ratio = width / original_width
+        new_height = int(original_height * aspect_ratio)
+        return image.resize((width, new_height))
 
-            with matplotlib_tab:
-                display_matplotlib_code(palette_hex)
+    if height is not None:
+        aspect_ratio = height / original_height
+        new_width = int(original_width * aspect_ratio)
+        return image.resize((new_width, height))
 
-                import matplotlib as mpl
-                from cycler import cycler
+def overlay_image(background_image, overlay_image, x, y):
+    overlay_image = overlay_image.convert("RGBA")
+    background_image.paste(overlay_image, (x, y), overlay_image)
+    return background_image
 
-                mpl.rcParams["axes.prop_cycle"] = cycler(color=palette_hex)
-                import matplotlib.pyplot as plt
+def add_text(background_image, text, position, font_size, font_color, font_style):
+    draw = ImageDraw.Draw(background_image)
+    font_path = get_font_path(font_style)
+    font = ImageFont.truetype(font_path, font_size)
 
-                x = np.arange(5)
-                y_list = np.random.random((len(palette_hex), 5))+2
-                df = pd.DataFrame(y_list).T
+    draw.text(position, text, font=font, fill=font_color)
 
-                area_tab, bar_tab = st.tabs(["area chart", "bar chart"])
+def get_font_path(font_style):
+    if font_style == "Arial":
+        return "arial.ttf"
+    elif font_style == "Times New Roman":
+        return "times.ttf"
+    elif font_style == "Courier New":
+        return "cour.ttf"
+    elif font_style == "Impact":
+        return "impact.ttf"  
+    elif font_style == "Cooper Black":
+        return "cooperblack.ttf"  
+    elif font_style == "Lobster":
+        return "lobster.ttf"  
+    elif font_style == "Pacifico":
+        return "pacifico.ttf"  
+    elif font_style == "Playbill":
+        return "playbill.ttf"  
+    elif font_style == "Chiller":
+        return "chiller.ttf"
 
-                with area_tab:
-                    fig_area , ax_area = plt.subplots()
-                    df.plot(kind="area", ax=ax_area, backend="matplotlib", )  
-                    st.header("Example Area Chart")
-                    st.pyplot(fig_area)
-    
-                with bar_tab:
-                    fig_bar , ax_bar = plt.subplots()
-                    df.plot(kind="bar", ax=ax_bar, stacked=True, backend="matplotlib", )
-                    st.header("Example Bar Chart")
-                    st.pyplot(fig_bar)
+def download_edited_poster(background_image):
+        image_bytes = io.BytesIO()
+        background_image.save(image_bytes, format='PNG')
+        st.download_button(
+            label="Download Edited Poster",
+            data=image_bytes.getvalue(),
+            file_name='edited_poster.png',
+            mime='image/png'
+        )
 
-                
-            with plotly_tab:
-                display_plotly_code(palette_hex)
+if __name__ == "__main__":
+    generator = BackgroundGenerator()
+    generator.run()
+    background_size = (1024, 1024)
 
-                import plotly.io as pio
-                import plotly.graph_objects as go
-                pio.templates["sophisticated"] = go.layout.Template(
-                    layout=go.Layout(
-                    colorway=palette_hex
-                    )
-                )
-                pio.templates.default = 'sophisticated'
+#    background_image = Image.new("RGB", background_size, "black")
+    background_image = Image.open('saved_image.jpg')
 
-                area_tab, bar_tab = st.tabs(["area chart", "bar chart"])
+    # st.title("Automated Poster Generation and Customization")
 
-                with area_tab:
-                    fig_area = df.plot(kind="area", backend="plotly", )
-                    st.header("Example Area Chart")
-                    st.plotly_chart(fig_area, use_container_width=True)
-    
-                with bar_tab:
-                    fig_bar = df.plot(kind="bar", backend="plotly", barmode="stack")
-                    st.header("Example Bar Chart")
-                    st.plotly_chart(fig_bar, use_container_width=True)
+    logo_image = st.sidebar.file_uploader('Upload Logo', type=['jpg', 'jpeg', 'png'])
 
-       
-else:
-    st.info("👈  Click on 'Find Palette' ot turn on 'Toggle Update' to see the color palette.")
+    if 'logo_x' not in st.session_state:
+        st.session_state.logo_x = 0
+    if 'logo_y' not in st.session_state:
+        st.session_state.logo_y = 0
 
-st.sidebar.success(print_praise())   
-st.sidebar.write("---\n")
-st.sidebar.caption("""You can check out the source code [here](https://github.com/syasini/sophisticated_palette).
-                      The `matplotlib` and `plotly` code snippets have been borrowed from [here](https://matplotlib.org/stable/users/prev_whats_new/dflt_style_changes.html) and [here](https://stackoverflow.com/questions/63011674/plotly-how-to-change-the-default-color-pallete-in-plotly).""")
-st.sidebar.write("---\n")
+    if logo_image is not None:
+        logo_image = Image.open(logo_image)
+        logo_image = logo_image.convert("RGBA")
+        logo_width = st.sidebar.slider("Logo Width", 10, background_size[0], 100)
 
+        logo_image = resize_with_aspect_ratio(logo_image, width=logo_width)
+
+        st.sidebar.markdown("### Logo Position")
+        st.session_state.logo_x = st.sidebar.slider("Logo X Position", 0, background_size[0] - logo_image.width, st.session_state.logo_x)
+        st.session_state.logo_y = st.sidebar.slider("Logo Y Position", 0, background_size[1] - logo_image.height, st.session_state.logo_y)
+
+        background_image = overlay_image(background_image, logo_image, st.session_state.logo_x, st.session_state.logo_y)
+
+    uploaded_images = []
+    num_uploaded_images = st.sidebar.number_input("Number of Images to Upload", min_value=1, max_value=10, value=1)
+
+    for i in range(num_uploaded_images):
+        uploaded_image = st.sidebar.file_uploader(f'Upload Image {i+1}', type=['jpg', 'jpeg', 'png'])
+        if uploaded_image is not None:
+            uploaded_images.append(uploaded_image)
+
+    for idx, uploaded_image in enumerate(uploaded_images):
+        if uploaded_image is not None:
+            image = Image.open(uploaded_image)
+
+            image_width = st.sidebar.slider(f"Image {idx+1} Width", 10, background_size[0], 100)
+
+            image = resize_with_aspect_ratio(image, width=image_width)
+
+            st.sidebar.markdown(f"### Image {idx+1} Position")
+            x_position = st.sidebar.slider(f"Image {idx+1} X Position", 0, background_size[0] - image.width, st.session_state.get(f"image_{idx}_x", 0))
+            y_position = st.sidebar.slider(f"Image {idx+1} Y Position", 0, background_size[1] - image.height, st.session_state.get(f"image_{idx}_y", 0))
+
+            overlay_image(background_image, image, x_position, y_position)
+            
+            
+            st.session_state[f"image_{idx}_x"] = x_position
+            st.session_state[f"image_{idx}_y"] = y_position
+
+    text_controls = st.sidebar.expander("Add Text")
+
+    num_texts = text_controls.number_input("Number of Texts", min_value=1, max_value=10, value=1)
+
+    for i in range(int(num_texts)):
+        with st.sidebar.expander(f"Text {i+1}"):
+            text = st.text_input(f"Enter Text {i+1}:")
+            text_position_x = st.slider(f"Text {i+1} X Position", 0, background_size[0], 0)
+            text_position_y = st.slider(f"Text {i+1} Y Position", 0, background_size[1], 0)
+            font_size = st.slider(f"Font Size {i+1}", 10, 150, 20)
+            font_color = st.color_picker(f"Text Color {i+1}", "#FFFFFF")
+            font_style = st.selectbox(f"Font Style {i+1}", ["Arial", "Times New Roman", "Courier New", "Impact"])
+
+            add_text(background_image, text, (text_position_x, text_position_y), font_size, font_color, font_style)
+
+    st.image(background_image, caption='Poster', use_column_width=True)
+
+
+
+    download_edited_poster(background_image)
+
+
+ 
