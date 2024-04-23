@@ -227,7 +227,7 @@ if __name__ == "__main__":
             text = st.text_input(f"Enter Text {i+1}:")
             text_position_x = st.slider(f"Text {i+1} X Position", 0, background_size[0], 0)
             text_position_y = st.slider(f"Text {i+1} Y Position", 0, background_size[1], 0)
-            font_size = st.slider(f"Font Size {i+1}", 10, 150, 20)
+            font_size = st.slider(f"Font Size {i+1}", 10, 150, 40)
             font_color = st.color_picker(f"Text Color {i+1}", "#FFFFFF")
             font_style = st.selectbox(f"Font Style {i+1}", ["Arial", "Times New Roman", "Courier New", "Impact"])
 
