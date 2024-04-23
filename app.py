@@ -128,9 +128,9 @@ def overlay_image(background_image, overlay_image, x, y):
 def add_text(background_image, text, position, font_size, font_color, font_style):
     draw = ImageDraw.Draw(background_image)
     font_path = get_font_path(font_style)
-    font = ImageFont.truetype(font_path, font_size)
+    # font = ImageFont.truetype(font_path, font_size)
 
-    draw.text(position, text, font=font, fill=font_color)
+    draw.text(position, text, fill=font_color)
 
 def get_font_path(font_style):
     if font_style == "Arial":
